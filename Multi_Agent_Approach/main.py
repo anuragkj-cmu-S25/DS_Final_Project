@@ -11,8 +11,8 @@ def main():
     
     # Example usage
     user_input = '''
-    datapath:sample_data/5_HousingData.csv
-    Use machine learning to perform data analysis and write complete graphical reports
+    datapath:sample_data/2_Iris.csv
+    Use machine learning to perform data analysis and write complete graphical reports. Don't make it super detailed. I want a report quickly.
     '''
     system.run(user_input)
 

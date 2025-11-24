@@ -17,7 +17,7 @@ agents:
   code_agent:
     provider: google
     model_config:
-      model: gemini-2.5-pro
+      model: gemini-2.5-flash
       temperature: 1.0
   searcher_agent:
     provider: google
@@ -37,7 +37,7 @@ agents:
   note_agent:
     provider: google
     model_config:
-      model: gemini-2.5-pro
+      model: gemini-2.5-flash
       temperature: 1.0
   refiner_agent:
     provider: openai
