@@ -10,11 +10,52 @@ from langchain.chat_models import ChatOpenAI
 config_path = os.path.join(os.path.dirname(__file__), 'config', 'config.yaml')
 with open(config_path, 'r') as file:
     config = yaml.safe_load(file)
+
 model4_name = config["model4_name"]
 model3_name = config["model3_name"]
 api_key = config["openai_api_key"]
 
-def decide_encode_type(attributes, data_frame_head, model_type = 4, user_api_key = None):
+
+def parse_llm_response(llm_answer):
+    """
+    Parse LLM response and extract JSON, handling markdown code blocks.
+    Returns the parsed JSON object.
+    """
+    content = llm_answer.content
+    
+    # Remove markdown code blocks if present
+    if '```json' in content:
+        match = re.search(r'```json\s*\n(.*?)```', content, re.DOTALL)
+        if match:
+            json_str = match.group(1)
+        else:
+            json_str = content
+    elif '```' in content:
+        match = re.search(r'```\s*\n(.*?)```', content, re.DOTALL)
+        if match:
+            json_str = match.group(1)
+        else:
+            json_str = content
+    else:
+        json_str = content
+    
+    return json.loads(json_str.strip())
+
+
+def store_reasoning(key, reasoning_data):
+    """
+    Store LLM reasoning in session state for later display.
+    
+    Args:
+        key: Unique identifier for this decision (e.g., 'target_selection')
+        reasoning_data: Dict or string containing reasoning
+    """
+    if 'llm_reasoning' not in st.session_state:
+        st.session_state.llm_reasoning = {}
+    st.session_state.llm_reasoning[key] = reasoning_data
+
+
+def decide_encode_type(attributes, data_frame_head, model_type=4, user_api_key=None):
     """
     Decides the encoding type for given attributes using a language model via the OpenAI API.
 
@@ -26,6 +67,8 @@ def decide_encode_type(attributes, data_frame_head, model_type = 4, user_api_key
 
     Returns:
     - A JSON object containing the recommended encoding types for the given attributes. Please refer to prompt templates in config.py for details.
+    
+    Side effect: Stores reasoning in st.session_state
 
     Raises:
     - Exception: If there is an issue accessing the OpenAI API, such as an invalid API key or a network connection error, the function will raise an exception with a message indicating the problem.
@@ -40,16 +83,19 @@ def decide_encode_type(attributes, data_frame_head, model_type = 4, user_api_key
         summary_prompt = prompt_template.format(attributes=attributes, data_frame_head=data_frame_head)
         
         llm_answer = llm([HumanMessage(content=summary_prompt)])
-        if '```json' in llm_answer.content:
-            match = re.search(r'```json\n(.*?)```', llm_answer.content, re.DOTALL)
-            if match: json_str = match.group(1)
-        else: json_str = llm_answer.content
-        return json.loads(json_str)
+        response = parse_llm_response(llm_answer)
+        
+        # Store reasoning
+        store_reasoning('encoding', response.get('reasoning', {}))
+        
+        return response['decisions']
     except Exception as e:
         st.error("Cannot access the OpenAI API. Please check your API key or network connection.")
+        st.error(f"Error details: {str(e)}")
         st.stop()
 
-def decide_fill_null(attributes, types_info, description_info, model_type = 4, user_api_key = None):
+
+def decide_fill_null(attributes, types_info, description_info, model_type=4, user_api_key=None):
     """
     Decides the best encoding type for given attributes using an AI model via OpenAI API.
 
@@ -61,6 +107,8 @@ def decide_fill_null(attributes, types_info, description_info, model_type = 4, u
 
     Returns:
     - dict: A JSON object with recommended encoding types for the attributes. Please refer to prompt templates in config.py for details.
+    
+    Side effect: Stores reasoning in st.session_state
 
     Raises:
     - Exception: If there is an issue accessing the OpenAI API, such as an invalid API key or a network connection error, the function will raise an exception with a message indicating the problem.
@@ -75,16 +123,19 @@ def decide_fill_null(attributes, types_info, description_info, model_type = 4, u
         summary_prompt = prompt_template.format(attributes=attributes, types_info=types_info, description_info=description_info)
         
         llm_answer = llm([HumanMessage(content=summary_prompt)])
-        if '```json' in llm_answer.content:
-            match = re.search(r'```json\n(.*?)```', llm_answer.content, re.DOTALL)
-            if match: json_str = match.group(1)
-        else: json_str = llm_answer.content
-        return json.loads(json_str)
+        response = parse_llm_response(llm_answer)
+        
+        # Store reasoning
+        store_reasoning('null_filling', response.get('reasoning', {}))
+        
+        return response['decisions']
     except Exception as e:
         st.error("Cannot access the OpenAI API. Please check your API key or network connection.")
+        st.error(f"Error details: {str(e)}")
         st.stop()
 
-def decide_model(shape_info, head_info, nunique_info, description_info, model_type = 4, user_api_key = None):
+
+def decide_model(shape_info, head_info, nunique_info, description_info, model_type=4, user_api_key=None):
     """
     Decides the most suitable machine learning model based on dataset characteristics.
 
@@ -98,6 +149,8 @@ def decide_model(shape_info, head_info, nunique_info, description_info, model_ty
 
     Returns:
     - dict: A JSON object containing the recommended model and configuration. Please refer to prompt templates in config.py for details.
+    
+    Side effect: Stores reasoning in st.session_state
 
     Raises:
     - Exception: If there is an issue accessing the OpenAI API, such as an invalid API key or a network connection error, the function will raise an exception with a message indicating the problem.
@@ -112,16 +165,22 @@ def decide_model(shape_info, head_info, nunique_info, description_info, model_ty
         summary_prompt = prompt_template.format(shape_info=shape_info, head_info=head_info, nunique_info=nunique_info, description_info=description_info)
 
         llm_answer = llm([HumanMessage(content=summary_prompt)])
-        if '```json' in llm_answer.content:
-            match = re.search(r'```json\n(.*?)```', llm_answer.content, re.DOTALL)
-            if match: json_str = match.group(1)
-        else: json_str = llm_answer.content
-        return json.loads(json_str)
+        response = parse_llm_response(llm_answer)
+        
+        # Store reasoning with overall strategy
+        store_reasoning('model_selection', {
+            'reasoning': response.get('reasoning', {}),
+            'overall': response.get('overall_reasoning', '')
+        })
+        
+        return response['decisions']
     except Exception as e:
         st.error("Cannot access the OpenAI API. Please check your API key or network connection.")
+        st.error(f"Error details: {str(e)}")
         st.stop()
 
-def decide_cluster_model(shape_info, description_info, cluster_info, model_type = 4, user_api_key = None):
+
+def decide_cluster_model(shape_info, description_info, cluster_info, model_type=4, user_api_key=None):
     """
     Determines the appropriate clustering model based on dataset characteristics.
 
@@ -134,6 +193,8 @@ def decide_cluster_model(shape_info, description_info, cluster_info, model_type 
 
     Returns:
     - A JSON object with the recommended clustering model and parameters. Please refer to prompt templates in config.py for details.
+    
+    Side effect: Stores reasoning in st.session_state
 
     Raises:
     - Exception: If unable to access the OpenAI API or another error occurs.
@@ -148,16 +209,22 @@ def decide_cluster_model(shape_info, description_info, cluster_info, model_type 
         summary_prompt = prompt_template.format(shape_info=shape_info, description_info=description_info, cluster_info=cluster_info)
 
         llm_answer = llm([HumanMessage(content=summary_prompt)])
-        if '```json' in llm_answer.content:
-            match = re.search(r'```json\n(.*?)```', llm_answer.content, re.DOTALL)
-            if match: json_str = match.group(1)
-        else: json_str = llm_answer.content
-        return json.loads(json_str)
+        response = parse_llm_response(llm_answer)
+        
+        # Store reasoning
+        store_reasoning('cluster_model_selection', {
+            'reasoning': response.get('reasoning', {}),
+            'overall': response.get('overall_reasoning', '')
+        })
+        
+        return response['decisions']
     except Exception as e:
         st.error("Cannot access the OpenAI API. Please check your API key or network connection.")
+        st.error(f"Error details: {str(e)}")
         st.stop()
 
-def decide_regression_model(shape_info, description_info, Y_name, model_type = 4, user_api_key = None):
+
+def decide_regression_model(shape_info, description_info, Y_name, model_type=4, user_api_key=None):
     """
     Determines the appropriate regression model based on dataset characteristics and the target variable.
 
@@ -170,6 +237,8 @@ def decide_regression_model(shape_info, description_info, Y_name, model_type = 4
 
     Returns:
     - A JSON object with the recommended regression model and parameters. Please refer to prompt templates in config.py for details.
+    
+    Side effect: Stores reasoning in st.session_state
 
     Raises:
     - Exception: If unable to access the OpenAI API or another error occurs.
@@ -184,16 +253,22 @@ def decide_regression_model(shape_info, description_info, Y_name, model_type = 4
         summary_prompt = prompt_template.format(shape_info=shape_info, description_info=description_info, Y_name=Y_name)
 
         llm_answer = llm([HumanMessage(content=summary_prompt)])
-        if '```json' in llm_answer.content:
-            match = re.search(r'```json\n(.*?)```', llm_answer.content, re.DOTALL)
-            if match: json_str = match.group(1)
-        else: json_str = llm_answer.content
-        return json.loads(json_str)
+        response = parse_llm_response(llm_answer)
+        
+        # Store reasoning
+        store_reasoning('regression_model_selection', {
+            'reasoning': response.get('reasoning', {}),
+            'overall': response.get('overall_reasoning', '')
+        })
+        
+        return response['decisions']
     except Exception as e:
         st.error("Cannot access the OpenAI API. Please check your API key or network connection.")
+        st.error(f"Error details: {str(e)}")
         st.stop()
 
-def decide_target_attribute(attributes, types_info, head_info, model_type = 4, user_api_key = None):
+
+def decide_target_attribute(attributes, types_info, head_info, model_type=4, user_api_key=None):
     """
     Determines the target attribute for modeling based on dataset attributes and characteristics.
 
@@ -206,6 +281,8 @@ def decide_target_attribute(attributes, types_info, head_info, model_type = 4, u
 
     Returns:
     - The name of the recommended target attribute. Please refer to prompt templates in config.py for details.
+    
+    Side effect: Stores reasoning in st.session_state
 
     Raises:
     - Exception: If unable to access the OpenAI API or another error occurs.
@@ -220,16 +297,19 @@ def decide_target_attribute(attributes, types_info, head_info, model_type = 4, u
         summary_prompt = prompt_template.format(attributes=attributes, types_info=types_info, head_info=head_info)
 
         llm_answer = llm([HumanMessage(content=summary_prompt)])
-        if '```json' in llm_answer.content:
-            match = re.search(r'```json\n(.*?)```', llm_answer.content, re.DOTALL)
-            if match: json_str = match.group(1)
-        else: json_str = llm_answer.content
-        return json.loads(json_str)["target"]
+        response = parse_llm_response(llm_answer)
+        
+        # Store reasoning
+        store_reasoning('target_selection', response.get('reasoning', 'No reasoning provided'))
+        
+        return response['decision']['target']
     except Exception as e:
         st.error("Cannot access the OpenAI API. Please check your API key or network connection.")
+        st.error(f"Error details: {str(e)}")
         st.stop()
 
-def decide_test_ratio(shape_info, model_type = 4, user_api_key = None):
+
+def decide_test_ratio(shape_info, model_type=4, user_api_key=None):
     """
     Determines the appropriate train-test split ratio based on dataset characteristics.
 
@@ -240,6 +320,8 @@ def decide_test_ratio(shape_info, model_type = 4, user_api_key = None):
 
     Returns:
     - The recommended train-test split ratio as a float. Please refer to prompt templates in config.py for details.
+    
+    Side effect: Stores reasoning in st.session_state
 
     Raises:
     - Exception: If unable to access the OpenAI API or another error occurs.
@@ -254,16 +336,19 @@ def decide_test_ratio(shape_info, model_type = 4, user_api_key = None):
         summary_prompt = prompt_template.format(shape_info=shape_info)
 
         llm_answer = llm([HumanMessage(content=summary_prompt)])
-        if '```json' in llm_answer.content:
-            match = re.search(r'```json\n(.*?)```', llm_answer.content, re.DOTALL)
-            if match: json_str = match.group(1)
-        else: json_str = llm_answer.content
-        return json.loads(json_str)["test_ratio"]
+        response = parse_llm_response(llm_answer)
+        
+        # Store reasoning
+        store_reasoning('test_ratio', response.get('reasoning', 'No reasoning provided'))
+        
+        return response['decision']['test_ratio']
     except Exception as e:
         st.error("Cannot access the OpenAI API. Please check your API key or network connection.")
+        st.error(f"Error details: {str(e)}")
         st.stop()
 
-def decide_balance(shape_info, description_info, balance_info, model_type = 4, user_api_key = None):
+
+def decide_balance(shape_info, description_info, balance_info, model_type=4, user_api_key=None):
     """
     Determines the appropriate method to balance the dataset based on its characteristics.
 
@@ -276,6 +361,8 @@ def decide_balance(shape_info, description_info, balance_info, model_type = 4, u
 
     Returns:
     - The recommended method to balance the dataset. Please refer to prompt templates in config.py for details.
+    
+    Side effect: Stores reasoning in st.session_state
 
     Raises:
     - Exception: If unable to access the OpenAI API or another error occurs.
@@ -290,11 +377,13 @@ def decide_balance(shape_info, description_info, balance_info, model_type = 4, u
         summary_prompt = prompt_template.format(shape_info=shape_info, description_info=description_info, balance_info=balance_info)
 
         llm_answer = llm([HumanMessage(content=summary_prompt)])
-        if '```json' in llm_answer.content:
-            match = re.search(r'```json\n(.*?)```', llm_answer.content, re.DOTALL)
-            if match: json_str = match.group(1)
-        else: json_str = llm_answer.content
-        return json.loads(json_str)["method"]
+        response = parse_llm_response(llm_answer)
+        
+        # Store reasoning
+        store_reasoning('balance_strategy', response.get('reasoning', 'No reasoning provided'))
+        
+        return response['decision']['method']
     except Exception as e:
         st.error("Cannot access the OpenAI API. Please check your API key or network connection.")
+        st.error(f"Error details: {str(e)}")
         st.stop()

@@ -110,3 +110,78 @@ def replace_placeholders_with_nan(df):
         if df[col].dtype == 'object':
             df[col] = df[col].apply(lambda x: np.nan if str(x).lower() in placeholders else x)
     return df
+
+
+# ============================================================================
+# NEW: Fit/Apply Pattern for Preventing Data Leakage
+# ============================================================================
+
+def fit_imputers(df_train, mean_list, median_list, mode_list, new_category_list, interpolation_list):
+    """
+    Fit imputers on training data and return them.
+    This ensures imputation statistics are calculated from training data only.
+    
+    Parameters:
+    - df_train: Training DataFrame
+    - mean_list: Columns to impute with mean
+    - median_list: Columns to impute with median
+    - mode_list: Columns to impute with mode
+    - new_category_list: Columns to impute with new category
+    - interpolation_list: Columns to impute with interpolation (will use median as fallback)
+    
+    Returns:
+    - imputers: Dictionary of {column: imputer_config}
+    """
+    imputers = {}
+    
+    # Fit mean imputers
+    for col in mean_list:
+        if col in df_train.columns:
+            imputers[col] = {'method': 'mean', 'value': df_train[col].mean()}
+    
+    # Fit median imputers
+    for col in median_list:
+        if col in df_train.columns:
+            imputers[col] = {'method': 'median', 'value': df_train[col].median()}
+    
+    # Fit mode imputers
+    for col in mode_list:
+        if col in df_train.columns:
+            mode_value = df_train[col].mode()[0] if not df_train[col].mode().empty else None
+            if mode_value is not None:
+                imputers[col] = {'method': 'mode', 'value': mode_value}
+    
+    # For new_category_list, use mode (most frequent value)
+    for col in new_category_list:
+        if col in df_train.columns:
+            mode_value = df_train[col].mode()[0] if not df_train[col].mode().empty else None
+            if mode_value is not None:
+                imputers[col] = {'method': 'mode', 'value': mode_value}
+    
+    # For interpolation, use median as a safe fallback for test data
+    for col in interpolation_list:
+        if col in df_train.columns:
+            imputers[col] = {'method': 'median', 'value': df_train[col].median()}
+    
+    return imputers
+
+
+def apply_imputers(df, imputers):
+    """
+    Apply fitted imputers to any dataframe.
+    
+    Parameters:
+    - df: DataFrame to impute
+    - imputers: Dictionary of fitted imputers from fit_imputers()
+    
+    Returns:
+    - df: Imputed DataFrame
+    """
+    df_copy = df.copy()
+    
+    for col, imputer in imputers.items():
+        if col in df_copy.columns:
+            if imputer['method'] in ['mean', 'median', 'mode']:
+                df_copy[col] = df_copy[col].fillna(imputer['value'])
+    
+    return df_copy

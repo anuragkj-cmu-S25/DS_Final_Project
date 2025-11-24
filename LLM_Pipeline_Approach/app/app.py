@@ -2,7 +2,7 @@ import time
 import streamlit as st
 from streamlit_lottie import st_lottie
 from util import load_lottie, stream_data, welcome_message, introduction_message
-from prediction_model import prediction_model_pipeline
+from prediction_model_fixed import prediction_model_pipeline  # Using fixed version (no data leakage)
 from cluster_model import cluster_model_pipeline
 from regression_model import regression_model_pipeline
 from visualization import data_visualization

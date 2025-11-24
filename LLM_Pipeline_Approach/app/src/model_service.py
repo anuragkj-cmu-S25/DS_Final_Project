@@ -30,6 +30,40 @@ def split_data(X, Y, test_size = 0.2, random_state = 42, perform_pca = False):
 
     return X_train, X_test, Y_train, Y_test
 
+
+def split_data_early(X, Y, test_size=0.2, random_state=42, stratify=True):
+    """
+    Splits the dataset into training and testing sets EARLY in the pipeline.
+    This is done BEFORE any preprocessing to prevent data leakage.
+    
+    Uses stratified split for classification tasks to maintain class distribution.
+    
+    :param X: Feature matrix (DataFrame or array).
+    :param Y: Target vector.
+    :param test_size: Proportion of the dataset to include in the test split.
+    :param random_state: Controls the shuffling applied to the data before applying the split.
+    :param stratify: If True, performs stratified split using Y.
+    :return: X_train, X_test, Y_train, Y_test (raw, unprocessed data)
+    """
+    if stratify:
+        try:
+            # Attempt stratified split
+            X_train, X_test, Y_train, Y_test = train_test_split(
+                X, Y, test_size=test_size, random_state=random_state, stratify=Y
+            )
+        except ValueError:
+            # Fall back to non-stratified if stratification fails
+            # (e.g., too few samples in some classes)
+            X_train, X_test, Y_train, Y_test = train_test_split(
+                X, Y, test_size=test_size, random_state=random_state
+            )
+    else:
+        X_train, X_test, Y_train, Y_test = train_test_split(
+            X, Y, test_size=test_size, random_state=random_state
+        )
+    
+    return X_train, X_test, Y_train, Y_test
+
 def check_and_balance(X, Y, balance_threshold=0.5, method=1):
     """
     Check if the dataset is imbalanced and perform oversampling if necessary using RandomOverSampler, SMOTE, or ADASYN.

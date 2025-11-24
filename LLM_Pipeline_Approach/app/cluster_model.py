@@ -8,6 +8,7 @@ from src.pca import decide_pca, perform_PCA_for_clustering
 from src.model_service import save_model, calculate_silhouette_score, calculate_calinski_harabasz_score, calculate_davies_bouldin_score, gmm_predict, estimate_optimal_clusters
 from src.cluster_model import train_select_cluster_model
 from src.util import contain_null_attributes_info, separate_fill_null_list, check_all_columns_numeric, non_numeric_columns_and_head, separate_decode_list, get_cluster_method_name
+from src.reasoning_display import show_reasoning, show_all_reasoning_summary
 
 def start_training_model():
     st.session_state["start_training"] = True
@@ -39,6 +40,7 @@ def cluster_model_pipeline(DF, API_KEY, GPT_MODEL):
                 st.session_state.filled_df = filled_df
                 DF = filled_df
                 status.update(label='Missing value processing completed!', state="complete", expanded=False)
+            show_reasoning('null_filling', 'Missing Value Strategy')
             st.download_button(
                 label="Download Data with Missing Values Imputed",
                 data=st.session_state.filled_df.to_csv(index=False).encode('utf-8'),
@@ -50,6 +52,7 @@ def cluster_model_pipeline(DF, API_KEY, GPT_MODEL):
     else:
         st.success("Missing value processing completed!")
         if st.session_state.contain_null:
+            show_reasoning('null_filling', 'Missing Value Strategy')
             st.download_button(
                 label="Download Data with Missing Values Imputed",
                 data=st.session_state.filled_df.to_csv(index=False).encode('utf-8'),
@@ -75,6 +78,7 @@ def cluster_model_pipeline(DF, API_KEY, GPT_MODEL):
                 st.session_state.encoded_df = encoded_df
                 DF = encoded_df
                 status.update(label='Data encoding completed!', state="complete", expanded=False)
+            show_reasoning('encoding', 'Data Encoding Strategy')
             st.download_button(
                 label="Download Encoded Data",
                 data=st.session_state.encoded_df.to_csv(index=False).encode('utf-8'),
@@ -86,6 +90,7 @@ def cluster_model_pipeline(DF, API_KEY, GPT_MODEL):
     else:
         st.success("Data encoded completed using numeric mapping and one-hot!")
         if not st.session_state.all_numeric:
+            show_reasoning('encoding', 'Data Encoding Strategy')
             st.download_button(
                 label="Download Encoded Data",
                 data=st.session_state.encoded_df.to_csv(index=False).encode('utf-8'),
@@ -167,6 +172,7 @@ def cluster_model_pipeline(DF, API_KEY, GPT_MODEL):
                     if 'model_list' not in st.session_state:
                         st.session_state.model_list = model_list
                     st.session_state.decided_model = True
+                show_reasoning('cluster_model_selection', 'Clustering Model Selection')
 
             # Display results
             if st.session_state["decided_model"]:
@@ -186,6 +192,7 @@ def cluster_model_pipeline(DF, API_KEY, GPT_MODEL):
     # Footer
     st.divider()
     if "all_set" in st.session_state and st.session_state["all_set"]:
+        show_all_reasoning_summary()
         if "has_been_set" not in st.session_state:
             st.session_state["has_been_set"] = True
             developer_info()

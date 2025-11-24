@@ -8,6 +8,7 @@ from src.pca import decide_pca, perform_PCA_for_regression
 from src.model_service import split_data, save_model, calculate_r2_score, calculate_mse_and_rmse, calculate_mae
 from src.regression_model import train_selected_regression_model
 from src.util import select_Y, contain_null_attributes_info, separate_fill_null_list, check_all_columns_numeric, non_numeric_columns_and_head, separate_decode_list, get_data_overview, attribute_info, get_regression_method_name
+from src.reasoning_display import show_reasoning, show_all_reasoning_summary
 
 def start_training_model():
     st.session_state["start_training"] = True
@@ -34,6 +35,7 @@ def regression_model_pipeline(DF, API_KEY, GPT_MODEL):
             selected_Y = st.session_state.target_Y
             st.success("Target variable has been selected by the AI!")
             st.write(f'Target attribute selected: :green[**{selected_Y}**]')
+            show_reasoning('target_selection', 'Target Variable Selection')
             st.session_state.target_selected = True
         else:
             st.info("AI cannot determine the target variable from the data. Please select the target variable")
@@ -52,6 +54,7 @@ def regression_model_pipeline(DF, API_KEY, GPT_MODEL):
     else:
         if st.session_state.target_Y != -1:
             st.success("Target variable has been selected by the AI!")
+            show_reasoning('target_selection', 'Target Variable Selection')
         st.write(f"Target variable selected: :green[**{st.session_state.selected_Y}**]")
 
     if st.session_state.target_selected:
@@ -77,6 +80,7 @@ def regression_model_pipeline(DF, API_KEY, GPT_MODEL):
                     st.session_state.filled_df = filled_df
                     DF = filled_df
                     status.update(label='Missing value processing completed!', state="complete", expanded=False)
+                show_reasoning('null_filling', 'Missing Value Strategy')
                 st.download_button(
                     label="Download Data with Missing Values Imputed",
                     data=st.session_state.filled_df.to_csv(index=False).encode('utf-8'),
@@ -88,6 +92,7 @@ def regression_model_pipeline(DF, API_KEY, GPT_MODEL):
         else:
             st.success("Missing value processing completed!")
             if st.session_state.contain_null:
+                show_reasoning('null_filling', 'Missing Value Strategy')
                 st.download_button(
                     label="Download Data with Missing Values Imputed",
                     data=st.session_state.filled_df.to_csv(index=False).encode('utf-8'),
@@ -113,6 +118,7 @@ def regression_model_pipeline(DF, API_KEY, GPT_MODEL):
                     st.session_state.encoded_df = encoded_df
                     DF = encoded_df
                     status.update(label='Data encoding completed!', state="complete", expanded=False)
+                show_reasoning('encoding', 'Data Encoding Strategy')
                 st.download_button(
                     label="Download Encoded Data",
                     data=st.session_state.encoded_df.to_csv(index=False).encode('utf-8'),
@@ -124,6 +130,7 @@ def regression_model_pipeline(DF, API_KEY, GPT_MODEL):
         else:
             st.success("Data encoded completed using numeric mapping and one-hot!")
             if not st.session_state.all_numeric:
+                show_reasoning('encoding', 'Data Encoding Strategy')
                 st.download_button(
                     label="Download Encoded Data",
                     data=st.session_state.encoded_df.to_csv(index=False).encode('utf-8'),
@@ -164,6 +171,7 @@ def regression_model_pipeline(DF, API_KEY, GPT_MODEL):
         if 'test_percentage' not in st.session_state:
             with st.spinner("Deciding testing set percentage based on data..."):
                 st.session_state.test_percentage = int(decide_test_ratio(st.session_state.df_pca.shape, GPT_MODEL, API_KEY) * 100)
+            show_reasoning('test_ratio', 'Train-Test Split Strategy')
 
         splitting_column, balance_column = st.columns(2)
         with splitting_column:
@@ -203,6 +211,7 @@ def regression_model_pipeline(DF, API_KEY, GPT_MODEL):
                         if 'model_list' not in st.session_state:
                             st.session_state.model_list = model_list
                         st.session_state["decided_model"] = True
+                    show_reasoning('regression_model_selection', 'Regression Model Selection')
 
                 # Show modeling results
                 if st.session_state["decided_model"]:
@@ -222,6 +231,7 @@ def regression_model_pipeline(DF, API_KEY, GPT_MODEL):
         # Footer
         st.divider()
         if "all_set" in st.session_state and st.session_state["all_set"]:
+            show_all_reasoning_summary()
             if "has_been_set" not in st.session_state:
                 st.session_state["has_been_set"] = True
                 developer_info()

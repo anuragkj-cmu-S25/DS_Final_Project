@@ -120,3 +120,96 @@ def transform_data_for_clustering(df):
     transformed_df[numeric_cols] = scaler.fit_transform(transformed_df[numeric_cols])
     
     return transformed_df
+
+
+# ============================================================================
+# NEW: Fit/Apply Pattern for Preventing Data Leakage
+# ============================================================================
+
+def fit_encoders(df_train, convert_int_cols, one_hot_cols):
+    """
+    Fit encoders on training data and return them.
+    This ensures encoding schemes are learned from training data only.
+    
+    Parameters:
+    - df_train: Training DataFrame
+    - convert_int_cols: List of columns to encode with integer mapping
+    - one_hot_cols: List of columns to encode with one-hot
+    
+    Returns:
+    - encoders: Dictionary of encoder configurations
+    """
+    encoders = {}
+    
+    # Fit integer encoders
+    for col in convert_int_cols:
+        if col in df_train.columns and df_train[col].dtype == 'object':
+            unique_values = df_train[col].unique()
+            # Filter out NaN values
+            unique_values = [val for val in unique_values if pd.notna(val)]
+            encoders[col] = {
+                'type': 'integer',
+                'mapping': {val: idx for idx, val in enumerate(unique_values)},
+                'int_to_value': {idx: val for idx, val in enumerate(unique_values)}
+            }
+    
+    # Fit one-hot encoders
+    for col in one_hot_cols:
+        if col in df_train.columns:
+            if df_train[col].dtype == 'object' or df_train[col].dtype == 'category':
+                unique_values = df_train[col].unique()
+                # Filter out NaN values
+                unique_values = [val for val in unique_values if pd.notna(val)]
+                encoders[col] = {
+                    'type': 'onehot',
+                    'categories': list(unique_values)
+                }
+    
+    return encoders
+
+
+def apply_encoders(df, encoders, drop_cols=None):
+    """
+    Apply fitted encoders to any dataframe.
+    Handles unseen categories gracefully (maps to -1 for integer encoding,
+    creates all-zero column for one-hot encoding).
+    
+    Parameters:
+    - df: DataFrame to encode
+    - encoders: Dictionary of fitted encoders from fit_encoders()
+    - drop_cols: List of columns to drop (optional)
+    
+    Returns:
+    - df_encoded: Encoded DataFrame
+    - mappings: Dictionary of mappings (for compatibility with existing code)
+    """
+    df_copy = df.copy()
+    mappings = {'integer_mappings': {}, 'one_hot_mappings': {}}
+    
+    for col, encoder in encoders.items():
+        if col not in df_copy.columns:
+            continue
+        
+        if encoder['type'] == 'integer':
+            # Map known values, use -1 for unknown
+            df_copy[col] = df_copy[col].map(encoder['mapping']).fillna(-1).astype(int)
+            # Store mapping for return
+            mappings['integer_mappings'][col] = encoder['int_to_value']
+        
+        elif encoder['type'] == 'onehot':
+            # Create columns for known categories only
+            one_hot_mapping = {}
+            for category in encoder['categories']:
+                new_col_name = f"{col}_{category}"
+                df_copy[new_col_name] = (df_copy[col] == category).astype(int)
+                one_hot_mapping[category] = new_col_name
+            
+            # Drop the original column
+            df_copy = df_copy.drop(col, axis=1)
+            mappings['one_hot_mappings'][col] = one_hot_mapping
+    
+    # Drop specified columns
+    if drop_cols:
+        df_copy = df_copy.drop(columns=drop_cols, errors='ignore')
+    
+    return df_copy, mappings

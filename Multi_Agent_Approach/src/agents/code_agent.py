@@ -39,6 +39,7 @@ class CodeAgent(BaseAgent):
         - Focus solely on data processing tasks; do not generate visualizations or write non-Python code.
         - Provide only valid, executable Python code, including necessary comments for complex logic.
         - Avoid unnecessary complexity; prioritize readability and efficiency.
+        - Make sure to avaoid data leakage and overfitting.
         '''
 
     def _get_tools(self):

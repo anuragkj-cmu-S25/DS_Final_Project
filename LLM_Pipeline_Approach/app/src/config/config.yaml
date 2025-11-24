@@ -1,16 +1,119 @@
 openai_api_key: "YOUR_OPENAI_API_KEY"
 model4_name: "gpt-4-1106-preview"
 model3_name: "gpt-3.5-turbo-1106"
-numeric_attribute_template: |
-  You are a data analyst. You are cleaning the data and processing the attributes in the data that are not numeric. The columns to be processed include: {attributes}. The first 20 items of these data are as follows:
-  {data_frame_head}
-  Please help me decide whether each attribute should be processed as integer mapping or one-hot encoding based on content and semantics. If there's an attribute containing long text, consider dropping it. Integer mapping is represented by 1, one-hot encoding is represented by 2, and dropping the attribute is represented by 3. Only the data is returned in json format without any other explanation or content. Sample response: {{"color":2,"size":1,"country":2,"brand":2,"gender":1,"comments":3}}
+
+# Target Attribute Decision
+decide_target_attribute_template: |
+  You are a data analyst. You are trying to find out which attribute is the target attribute from the data frame. 
+  The attributes are {attributes}. The types of these attributes are:
+  {types_info}
+  The head(10) of the data frame is:
+  {head_info}
+  
+  Determine the target attribute to predict based on the data information provided.
+  
+  Return your response in the following JSON format with detailed reasoning:
+  {{
+    "decision": {{"target":"species"}},
+    "reasoning": "The 'species' column is identified as the target because: (1) It's a categorical variable with few unique values (setosa, versicolor, virginica), indicating a classification outcome. (2) All other columns (sepal_length, sepal_width, petal_length, petal_width) are continuous measurements serving as features. (3) The column name 'species' semantically represents what we typically predict based on flower measurements. (4) This aligns with the classic iris classification problem structure."
+  }}
+  
+  If the provided data is not sufficient to determine the target, return:
+  {{
+    "decision": {{"target":-1}},
+    "reasoning": "Unable to confidently identify target variable because: [explain specific ambiguities, such as: multiple columns could serve as outcomes, no clear dependent variable pattern, or data structure doesn't suggest prediction task]."
+  }}
+  
+  CRITICAL: Only return valid JSON. No markdown formatting, no code blocks, no extra text.
+
+# Null Value Filling Decision
 null_attribute_template: |
-  You are a data analyst. You are preprocessing the attributes in the data that contain null values. The columns to be processed include: {attributes}. The types of these attributes are:
+  You are a data analyst. You are preprocessing the attributes in the data that contain null values. 
+  The columns to be processed include: {attributes}. The types of these attributes are:
   {types_info}
   Statistics for these properties in csv format:
   {description_info}
-  Please help me decide how to supplement null values for each attribute based on content, statistics and semantics. The mean filling is represented by 1, the median filling is represented by 2, the mode filling is represented by 3, the introduction of a new category to represent the unknown is represented by 4, and the interpolation filling is represented by 5. Only the data is returned in json format without any other explanation or content. Sample response: {{"grade":2,"annual_income":2,"temperature":1,"fault_type":3,"country":4,"weight":1,"stock price":5}}
+  
+  Please help me decide how to supplement null values for each attribute based on content, statistics and semantics. 
+  The mean filling is represented by 1, the median filling is represented by 2, the mode filling is represented by 3, 
+  the introduction of a new category to represent the unknown is represented by 4, and the interpolation filling is represented by 5.
+  
+  Return your response in the following JSON format with detailed reasoning:
+  {{
+    "decisions": {{"age":2, "income":2, "temperature":1, "category":3, "country":4, "weight":1, "stock_price":5}},
+    "reasoning": {{
+      "age": "Age distribution shows median=35, mean=42, suggesting right skew (outliers present). Median is more robust to outliers than mean, preventing extreme ages from distorting imputation. This preserves typical age representation.",
+      "income": "Income has high variance (std=25000) with potential outliers. Median provides central tendency resistant to extreme values. Mean would be pulled by high earners, creating unrealistic imputations.",
+      "temperature": "Temperature appears normally distributed (mean≈median) with low skewness. Mean imputation is appropriate as it represents expected value. No extreme outliers detected in statistics.",
+      "category": "Categorical variable with mode='type_A' (60% frequency). Mode imputation fills with most common class, maintaining dominant pattern. Prevents creating artificial categories.",
+      "country": "Geographic data where 'missing' has semantic meaning (unknown origin). Creating 'Unknown' category preserves information about missingness pattern rather than artificially assigning a country.",
+      "weight": "Continuous physical measurement with symmetric distribution. Mean provides unbiased estimate assuming MCAR (missing completely at random). Statistics show no skewness concerns.",
+      "stock_price": "Time-series financial data where temporal relationships matter. Interpolation uses surrounding values to estimate, preserving trends and seasonality. Better than mean/median which ignore time ordering."
+    }}
+  }}
+  
+  CRITICAL: Only return valid JSON. No markdown formatting, no code blocks, no extra text.
+
+# Encoding Strategy Decision
+numeric_attribute_template: |
+  You are a data analyst. You are cleaning the data and processing the attributes in the data that are not numeric. 
+  The columns to be processed include: {attributes}. The first 20 items of these data are as follows:
+  {data_frame_head}
+  
+  Please help me decide whether each attribute should be processed as integer mapping or one-hot encoding based on content and semantics. 
+  If there's an attribute containing long text, consider dropping it. 
+  Integer mapping is represented by 1, one-hot encoding is represented by 2, and dropping the attribute is represented by 3.
+  
+  Return your response in the following JSON format with detailed reasoning:
+  {{
+    "decisions": {{"color":2, "size":1, "country":2, "brand":2, "gender":1, "comments":3, "priority":1}},
+    "reasoning": {{
+      "color": "Color is nominal categorical with values [red, blue, green]. No inherent order exists between colors. One-hot encoding prevents model from learning false ordinal relationships (e.g., red < blue). Creates binary features preserving independence.",
+      "size": "Size shows ordinal pattern [S, M, L, XL] with clear ordering. Integer mapping (S=0, M=1, L=2, XL=3) preserves this natural progression. Model can learn that XL > L > M > S, which is semantically correct.",
+      "country": "Country is nominal with ~15 unique values [USA, Canada, Mexico, ...]. No geographical order implied. One-hot encoding treats each country independently. Prevents false assumptions like USA=0, Canada=1 suggesting USA < Canada.",
+      "brand": "Brand is nominal categorical [Nike, Adidas, Puma, ...]. Brands have no inherent ordering. One-hot encoding allows model to learn brand-specific patterns without artificial relationships. Each brand gets independent weight.",
+      "gender": "Gender appears binary [M, F] or few categories. Integer mapping (M=0, F=1) is efficient for binary. While technically nominal, low cardinality makes one-hot encoding unnecessary. Integer works without imposing false order.",
+      "comments": "Comments contain free-text with avg length >200 characters. Requires NLP techniques (TF-IDF, embeddings) not available in current pipeline. High dimensionality would dominate feature space. Dropping recommended until NLP module added.",
+      "priority": "Priority shows ordinal levels [Low, Medium, High, Critical]. Clear ordering exists. Integer mapping (Low=0, Medium=1, High=2, Critical=3) preserves severity ranking. Model should learn Critical > High > Medium > Low."
+    }}
+  }}
+  
+  CRITICAL: Only return valid JSON. No markdown formatting, no code blocks, no extra text.
+
+# Test Ratio Decision
+decide_test_ratio_template: |
+  You are a data analyst. You are trying to split the data frame into training set and test set. 
+  The shape of my data frame is {shape_info}. 
+  Determine the test set ratio based on the shape information provided and it's assumed that the categories of the target variable are balanced. 
+  The test set ratio range is 0.01 to 0.25.
+  
+  Return your response in the following JSON format with detailed reasoning:
+  {{
+    "decision": {{"test_ratio": 0.20}},
+    "reasoning": "With shape {shape_info}: Dataset has N samples. Using 20% test ratio because: (1) Provides sufficient test samples (0.2*N ≈ X samples) for reliable performance estimation. (2) Leaves 80% (≈Y samples) for training, ensuring model has enough data to learn patterns. (3) Standard 80/20 split balances model training needs with evaluation robustness. (4) For datasets <1000 samples, would consider smaller test set (15%) to maximize training data. (5) For datasets >10000 samples, could use smaller test percentage (10-15%) as absolute test size remains large."
+  }}
+  
+  CRITICAL: Only return valid JSON. No markdown formatting, no code blocks, no extra text.
+
+# Class Balance Strategy Decision
+decide_balance_template: |
+  You are a data analyst. You have a cleaned and pre-processed data frame and you want to handle class imbalance before training the machine learning model. 
+  The shape of my data frame is {shape_info}. The description of the data frame is:
+  {description_info}
+  The number of each value of the target attribute is: {balance_info}
+  
+  Determine the balance strategy based on the data information provided. 
+  The RandomOverSampler is represented by 1, the SMOTE is represented by 2, the ADASYN is represented by 3, and do not balance is represented by 4.
+  
+  Return your response in the following JSON format with detailed reasoning:
+  {{
+    "decision": {{"method": 2}},
+    "reasoning": "Class distribution analysis: {balance_info}. Imbalance ratio is X:Y. Recommending SMOTE (method 2) because: (1) Moderate imbalance (ratio between 1:3 and 1:10) benefits from synthetic sampling. (2) SMOTE creates synthetic minority samples by interpolating between existing examples, avoiding simple duplication. (3) Reduces overfitting risk compared to RandomOverSampler which duplicates exact samples. (4) Dataset size ({shape_info}) is sufficient for SMOTE to find meaningful neighbors. (5) Feature space appears continuous/mixed, suitable for k-NN interpolation. Alternative: Would use RandomOverSampler (1) if features were purely categorical. Would use ADASYN (3) if imbalance was severe (>1:10). Would skip balancing (4) if classes were already balanced (<1:2 ratio) or if using algorithms robust to imbalance (XGBoost)."
+  }}
+  
+  CRITICAL: Only return valid JSON. No markdown formatting, no code blocks, no extra text.
+
+# Classification Model Selection
 decide_model_template: |
   You are a data analyst. The shape of my data frame is {shape_info}. The head(5) of the data frame is:
   {head_info}
@@ -18,26 +121,79 @@ decide_model_template: |
   {nunique_info}
   The description of the data frame is:
   {description_info}
-  The data has been cleaned and preprocessed, nulls filled, and encoded ready to train the machine learning model. According to the data information provided, please help me decide which machine learning models should be used for classification prediction. Model options are: 1:LogisticRegression, 2:SVC, 3:GaussianNB, 4:RandomForestClassifier, 5:AdaBoostClassifier, 6:XGBClassifier, 7:GradientBoostingClassifier. Please select three models to take into account different model performance indicators. Only the data is returned in json format without any other explanation or content. Sample response: {{"model1":1,"model2":4,"model3":6}}
+  
+  The data has been cleaned and preprocessed, nulls filled, and encoded ready to train the machine learning model. 
+  According to the data information provided, please help me decide which machine learning models should be used for classification prediction. 
+  
+  Model options are: 
+  1:LogisticRegression, 2:SVC, 3:GaussianNB, 4:RandomForestClassifier, 5:AdaBoostClassifier, 6:XGBClassifier, 7:GradientBoostingClassifier
+  
+  Please select three models to take into account different model performance indicators.
+  
+  Return your response in the following JSON format with detailed reasoning:
+  {{
+    "decisions": {{"model1": 1, "model2": 4, "model3": 6}},
+    "reasoning": {{
+      "model1": "LogisticRegression: Linear baseline model selected for: (1) Fast training time with O(n*d) complexity suitable for shape {shape_info}. (2) Interpretable coefficients reveal feature importance - critical for understanding predictions. (3) Works well when classes are linearly separable (will validate this assumption). (4) Low variance, high bias - good starting point to establish performance floor. (5) Probabilistic outputs via sigmoid for confidence estimation.",
+      "model2": "RandomForestClassifier: Ensemble method chosen for: (1) Handles non-linear relationships that LogisticRegression might miss. (2) Robust to outliers through random sampling and tree splits. (3) Feature importance scores via Gini impurity help identify key predictors. (4) Minimal hyperparameter tuning required for good performance. (5) Reduces overfitting through averaging multiple trees. (6) Nunique values suggest mixed feature types - trees handle this naturally.",
+      "model3": "XGBClassifier: Gradient boosting selected for: (1) State-of-the-art performance on structured/tabular data. (2) Handles class imbalance through scale_pos_weight parameter. (3) Built-in regularization (alpha, lambda) prevents overfitting. (4) Sequential tree building corrects errors from previous trees. (5) Feature engineering less critical due to tree interactions. (6) Dataset size ({shape_info}) sufficient for boosting to shine without overfitting."
+    }},
+    "overall_reasoning": "Strategy: Selected diverse model types to compare approaches. LogisticRegression (linear, interpretable) establishes baseline. RandomForest (non-linear, ensemble) captures complex patterns. XGBoost (boosting, state-of-art) maximizes performance. This combination: (1) Tests linearity assumption via LogReg vs tree-based models. (2) Compares ensemble strategies (bagging vs boosting). (3) Balances interpretability (LogReg) with accuracy (XGBoost). (4) Provides robust performance estimate - if all three agree, high confidence. Data characteristics: {shape_info} with {nunique_info} unique values suggests moderate complexity suitable for all three. Description statistics show {description_info} indicating scaled/normalized features ready for modeling."
+  }}
+  
+  CRITICAL: Only return valid JSON. No markdown formatting, no code blocks, no extra text.
+
+# Clustering Model Selection
 decide_clustering_model_template: |
   You are a data analyst. The shape of my data frame is {shape_info}. The description of the data frame is:
   {description_info}
-  The data has been cleaned and preprocessed, numerically transformed, and ready to train the clustering models. According to the data information provided, please help me decide which clustering models should be used for discovering natural groupings in the data. The expected number of clusters is {cluster_info}. Model options are: 1:KMeans, 2:DBSCAN, 3:GaussianMixture, 4:AgglomerativeClustering, 5:SpectralClustering. Please select three models to take into account different model performance indicators. Only the data is returned in json format without any other explanation or content. Sample response: {{"model1":1,"model2":2,"model3":3}}
+  
+  The data has been cleaned and preprocessed, numerically transformed, and ready to train the clustering models. 
+  According to the data information provided, please help me decide which clustering models should be used for discovering natural groupings in the data. 
+  The expected number of clusters is {cluster_info}. 
+  
+  Model options are: 
+  1:KMeans, 2:DBSCAN, 3:GaussianMixture, 4:AgglomerativeClustering, 5:SpectralClustering
+  
+  Please select three models to take into account different model performance indicators.
+  
+  Return your response in the following JSON format with detailed reasoning:
+  {{
+    "decisions": {{"model1": 1, "model2": 2, "model3": 3}},
+    "reasoning": {{
+      "model1": "KMeans: Partition-based clustering selected for: (1) Fast and scalable with O(n*k*i) complexity, suitable for shape {shape_info}. (2) Works well when clusters are spherical/globular. (3) Known cluster count k={cluster_info} aligns with KMeans requirements. (4) Produces hard assignments - each point belongs to exactly one cluster. (5) Cluster centers provide interpretable centroids. (6) Good baseline to establish cluster structure.",
+      "model2": "DBSCAN: Density-based clustering chosen for: (1) Discovers arbitrary-shaped clusters (non-spherical) that KMeans would miss. (2) Automatically identifies outliers/noise points - valuable for data quality. (3) Doesn't require pre-specifying k - validates our k={cluster_info} assumption. (4) Works when clusters have varying densities. (5) Parameter-free in terms of cluster count - uses eps and min_samples. (6) Provides second opinion on natural groupings.",
+      "model3": "GaussianMixture: Probabilistic clustering selected for: (1) Soft clustering - assigns probabilities rather than hard labels. (2) Models clusters as Gaussian distributions - captures elliptical shapes. (3) Handles overlapping clusters better than KMeans. (4) Provides uncertainty estimates via probabilities. (5) k={cluster_info} components match our expected structure. (6) More flexible than KMeans for non-spherical clusters."
+    }},
+    "overall_reasoning": "Strategy: Selected models with different assumptions to robustly discover clusters. KMeans (partition, spherical) provides fast baseline. DBSCAN (density, arbitrary shape) validates cluster count and finds outliers. GaussianMixture (probabilistic, elliptical) offers soft assignments. This combination: (1) Tests cluster shape assumptions (spherical vs arbitrary). (2) Validates cluster count - DBSCAN doesn't require k, so agreement confirms {cluster_info}. (3) Compares hard vs soft clustering paradigms. (4) Identifies outliers (DBSCAN) vs forcing all points into clusters (KMeans/GMM). Data characteristics: {shape_info} preprocessed and standardized. Description statistics {description_info} suggest variance/distribution patterns. Expected {cluster_info} clusters based on elbow method or domain knowledge."
+  }}
+  
+  CRITICAL: Only return valid JSON. No markdown formatting, no code blocks, no extra text.
+
+# Regression Model Selection
 decide_regression_model_template: |
-  You are a data analyst. You are trying to select some regression models to predict the target attribute. The shape of my data frame is {shape_info}. The target variable to be predicted is {Y_name}. The description of the data frame is:
+  You are a data analyst. You are trying to select some regression models to predict the target attribute. 
+  The shape of my data frame is {shape_info}. The target variable to be predicted is {Y_name}. 
+  The description of the data frame is:
   {description_info}
-  The data has been cleaned and preprocessed, numerically transformed, and ready to train the regression models. According to the data information provided, please help me decide which regression models should be used to provide better prediction performance. Model options are: 1:LinearRegression, 2:Ridge, 3:Lasso, 4:RandomForestRegressor, 5:GradientBoostingRegressor, 6:ElasticNet. Please select three models to take into account different model performance indicators. Only the data is returned in json format without any other explanation or content. Sample response: {{"model1":1,"model2":2,"model3":3}}
-decide_target_attribute_template: |
-  You are a data analyst. You are trying to find out which attribute is the target attribute from the data frame. The attributes are {attributes}. The types of these attributes are:
-  {types_info}
-  The head(10) of the data frame is:
-  {head_info}
-  Determine the target attribute to predict based on the data information provided. Only the data is returned in json format without any other explanation or content. Sample response: {{"target":"species"}}
-  If the provided data is not sufficient to determine the target, only return the data in json format {{"target":-1}}
-decide_test_ratio_template: |
-  You are a data analyst. You are trying to split the data frame into training set and test set. The shape of my data frame is {shape_info}. Determine the test set ratio based on the shape information provided and it's assumed that the categories of the target variable are balanced. The test set ratio range is 0.01 to 0.25. Only the data is returned in json format without any other explanation or content. Sample response: {{"test_ratio":0.25}}
-decide_balance_template: |
-  You are a data analyst. You have a cleaned and pre-processed data frame and you want to handle class imbalance before training the machine learning model. The shape of my data frame is {shape_info}. The description of the data frame is:
-  {description_info}
-  The number of each value of the target attribute is: {balance_info}
-  Determine the balance strategy based on the data information provided. The RandomOverSampler is represented by 1, the SMOTE is represented by 2, the ADASYN is represented by 3, and do not balance is represented by 4. Only the data is returned in json format without any other explanation or content. Sample response: {{"method":2}}
+  
+  The data has been cleaned and preprocessed, numerically transformed, and ready to train the regression models. 
+  According to the data information provided, please help me decide which regression models should be used to provide better prediction performance. 
+  
+  Model options are: 
+  1:LinearRegression, 2:Ridge, 3:Lasso, 4:RandomForestRegressor, 5:GradientBoostingRegressor, 6:ElasticNet
+  
+  Please select three models to take into account different model performance indicators.
+  
+  Return your response in the following JSON format with detailed reasoning:
+  {{
+    "decisions": {{"model1": 1, "model2": 2, "model3": 5}},
+    "reasoning": {{
+      "model1": "LinearRegression: OLS baseline selected for: (1) Assumes linear relationship between features and {Y_name} - will test this assumption. (2) Fast training, no hyperparameters - good starting point. (3) Interpretable coefficients show feature impact on {Y_name}. (4) Provides statistical significance tests for features. (5) Works well when features are independent (low multicollinearity). (6) Establishes performance floor for more complex models to beat.",
+      "model2": "Ridge: L2 regularized regression chosen for: (1) Handles multicollinearity better than OLS - shrinks correlated features together. (2) Prevents overfitting through penalty term λ||β||². (3) More stable than OLS when features > samples or high correlation. (4) Keeps all features (doesn't zero coefficients) - useful when all may be relevant. (5) Cross-validation for λ ensures optimal bias-variance tradeoff. (6) Description stats suggest potential multicollinearity, making regularization valuable.",
+      "model3": "GradientBoostingRegressor: Boosting ensemble selected for: (1) Captures non-linear relationships that linear models miss. (2) State-of-the-art performance on structured regression tasks. (3) Handles feature interactions automatically through tree splits. (4) Robust to outliers via robust loss functions (huber, quantile). (5) Sequential learning focuses on hard-to-predict samples. (6) Dataset size {shape_info} sufficient for boosting without overfitting. (7) Predicts {Y_name} which may have complex dependencies."
+    }},
+    "overall_reasoning": "Strategy: Selected progression from simple to complex models. LinearRegression (parametric, linear) tests linearity assumption and provides baseline. Ridge (regularized linear) addresses multicollinearity while maintaining interpretability. GradientBoosting (non-parametric, non-linear) captures complex patterns if linear assumptions fail. This combination: (1) Tests linearity - if Ridge ≈ OLS, multicollinearity isn't issue. If GradientBoosting >> linear, relationship is non-linear. (2) Balances interpretability (Linear/Ridge) vs accuracy (GradientBoosting). (3) Provides model selection insight - simplest adequate model preferred. Target '{Y_name}' characteristics: {description_info} suggests continuous/bounded variable. Shape {shape_info} indicates sufficient/limited training samples. Feature relationships will determine which model performs best."
+  }}
+  
+  CRITICAL: Only return valid JSON. No markdown formatting, no code blocks, no extra text.
