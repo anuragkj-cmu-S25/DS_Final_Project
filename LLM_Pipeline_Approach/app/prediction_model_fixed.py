@@ -290,6 +290,46 @@ def prediction_model_pipeline(DF, API_KEY, GPT_MODEL):
         st.plotly_chart(correlation_matrix_plotly(st.session_state.train_with_target))
         
         # ====================================================================
+        # STEP 6.5: Handle Any Remaining NaN Values (Safety Check)
+        # ====================================================================
+        if 'final_nan_check_done' not in st.session_state:
+            # Check for any remaining NaN values in training data
+            train_nan_count = st.session_state.X_train_dedup.isnull().sum().sum()
+            test_nan_count = st.session_state.X_test_dedup.isnull().sum().sum()
+            
+            if train_nan_count > 0 or test_nan_count > 0:
+                st.warning(f"⚠️ Found {train_nan_count} remaining NaN values in training data and {test_nan_count} in test data. Filling with median...")
+                
+                # Create copies to avoid modifying in place
+                X_train_clean = st.session_state.X_train_dedup.copy()
+                X_test_clean = st.session_state.X_test_dedup.copy()
+                
+                # Fill remaining NaNs with median (fitted on training data)
+                for col in X_train_clean.columns:
+                    if X_train_clean[col].isnull().any():
+                        # Use median/mode from training data
+                        if X_train_clean[col].dtype in ['float64', 'int64', 'float32', 'int32']:
+                            fill_value = X_train_clean[col].median()
+                            if np.isnan(fill_value):  # If median is also NaN, use 0
+                                fill_value = 0
+                        else:
+                            mode_vals = X_train_clean[col].mode()
+                            fill_value = mode_vals[0] if not mode_vals.empty else 0
+                        
+                        # Apply to both train and test
+                        X_train_clean[col].fillna(fill_value, inplace=True)
+                        if col in X_test_clean.columns:
+                            X_test_clean[col].fillna(fill_value, inplace=True)
+                
+                # Update session state with cleaned data
+                st.session_state.X_train_dedup = X_train_clean
+                st.session_state.X_test_dedup = X_test_clean
+                
+                st.success("✅ All remaining NaN values handled (fitted on training data).")
+            
+            st.session_state.final_nan_check_done = True
+        
+        # ====================================================================
         # STEP 7: PCA (FIT on train, APPLY to both)
         # ====================================================================
         st.subheader('Principal Component Analysis')
