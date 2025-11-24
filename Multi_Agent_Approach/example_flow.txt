@@ -1,0 +1,65 @@
+1. START
+   State: {messages: [HumanMessage("Analyze data")], hypothesis: "", ...}
+   
+2. → Hypothesis Node
+   - Invokes HypothesisAgent
+   - Agent uses tools: collect_data, google_search
+   - Returns: {hypothesis: "RF prediction", sender: "hypothesis_agent"}
+   - State updated
+   
+3. → HumanChoice Node
+   - Displays hypothesis
+   - User inputs: "2" (continue)
+   - Returns: {process: "Continue the research process"}
+   - State updated
+   
+4. → hypothesis_router(state)
+   - Reads: state["process"] == "Continue the research process"
+   - Returns: "Process"
+   - Workflow routes to Process node
+   
+5. → Process Node
+   - Invokes ProcessAgent
+   - Agent returns: {next: "Coder", task: "Perform EDA"}
+   - State updated: {process_decision: "Coder", process: "Perform EDA"}
+   
+6. → process_router(state)
+   - Reads: state["process_decision"] == "Coder"
+   - Returns: "Coder"
+   - Workflow routes to Coder node
+   
+7. → Coder Node
+   - Invokes CodeAgent
+   - Agent uses tools: read_document, execute_code
+   - Returns: {code_state: "EDA complete", sender: "code_agent"}
+   - State updated
+   
+8. → QualityReview Node (always after specialists)
+   - Invokes QualityReviewAgent
+   - Agent checks code output
+   - Returns: {needs_revision: False, quality_review: "Good"}
+   - State updated
+   
+9. → QualityReview_router(state)
+   - Reads: state["needs_revision"] == False
+   - Returns: "NoteTaker"
+   - Workflow routes to NoteTaker node
+   
+10. → NoteTaker Node
+    - Invokes NoteAgent
+    - Consolidates state
+    - Returns: Complete updated state
+    
+11. → Process Node (cycle continues)
+    - ProcessAgent decides next task
+    - Maybe returns: {next: "Visualization", task: "Create plots"}
+    
+... and so on until ProcessAgent returns {next: "FINISH"}
+
+12. → Refiner Node
+    - Polishes final report
+    
+13. → HumanReview Node
+    - User decides: continue or end
+    
+14. → END
